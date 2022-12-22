@@ -3,7 +3,31 @@
 
 Type containing the data in an XSF file as defined by the [XSF specification](http://www.xcrysden.org/doc/XSF.html)
 """
-struct XSF end
+struct XSF <: AtomsFile
+    data::Dict{String,Any}
+end
+
+function parse_file(xsffile::XSF)
+    alldata = xsffile.data
+
+    atomtypes = alldata["PRIMCOORD"][1]
+    positions = alldata["PRIMCOORD"][2]
+    # TODO What to do about CONVVEC
+    box = alldata["PRIMVEC"]
+
+    atoms = map(atomtypes, eachrow(positions)) do atom, pos
+        Atom(atom,pos)
+    end
+
+    # For now all keys in XSF are added to avoid data loss
+    # TODO Some keys like PRIMCOORD and PRIMVEC can probably be excluded
+    sysprops = Dict{Symbol,Any}()
+    for key in keys(alldata)
+        sysprops[Symbol(key)] = alldata[key]
+    end
+
+    return periodic_system(atoms, box; sysprops...)
+end
 
 function read_xsf(filename)
     filedata = readlines(filename)
@@ -21,7 +45,7 @@ function read_xsf(filename)
         error("Currently only periodic crystal structures are implemented.")
     end
 
-    alldata, filedata, curline
+    return XSF(alldata)
 end
 
 # Read the next section title excluding comment lines and empty lines
@@ -88,10 +112,10 @@ end
 
 # Read lattice data
 function _xsf_read_lattice(lines)
-    lattice_vecs = Vector{Vector{Float64}}(undef, 3)
+    lattice_vecs = Vector{Vector{typeof(1.0u"Å")}}(undef, 3)
     
     for (i,line) in pairs(lines)
-        lattice_vecs[i] = parse.(Float64, split(line))
+        lattice_vecs[i] = parse.(Float64, split(line))u"Å"
     end
 
     return lattice_vecs
@@ -100,7 +124,7 @@ end
 # Read coordinates data
 function _xsf_read_coords(lines, natoms)
     atomtypes = Vector{Union{Symbol, Int}}(undef, natoms)
-    coordinates = Array{Float64}(undef, natoms, 3)
+    coordinates = Array{typeof(1.0u"Å")}(undef, natoms, 3)
     
     for (i,line) in pairs(lines)
         linedata = split(line)
@@ -112,7 +136,7 @@ function _xsf_read_coords(lines, natoms)
             atomtypes[i] = atnum
         end
 
-        coordinates[i,:] .= parse.(Float64, linedata[2:4])
+        coordinates[i,:] .= parse.(Float64, linedata[2:4])u"Å"
     end
 
     return atomtypes, coordinates
@@ -120,12 +144,12 @@ end
 
 # Read 3D data grid
 function _xsf_read_datagrid3d(lines, nx, ny, nz)
-    orig = parse.(Float64, split(lines[1]))
-    spanvec = Vector{Vector{Float64}}(undef, 3)
+    orig = parse.(Float64, split(lines[1]))u"Å"
+    spanvec = Vector{Vector{typeof(1.0u"Å")}}(undef, 3)
     datagrid = Array{Float64}(undef, nx, ny, nz)
 
     for i in 1:3
-        spanvec[i] = parse.(Float64, split(lines[i+1]))
+        spanvec[i] = parse.(Float64, split(lines[i+1]))u"Å"
     end
 
     counter = 0
